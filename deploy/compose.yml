@@ -1,0 +1,106 @@
+# g9s-devbox — compose template, P1: single `devbox` service (local core).
+#
+# The same file is the local template (`docker compose --env-file .env`)
+# and the governetics Path A template (paste into the project's
+# `compose_template`). The panel touches only declared places: `name`,
+# `image` (rewritten to a digest on deploy) and it appends `env_file` /
+# file volumes for the keys declared in `x-g9s-config` below. P3 adds the
+# `sftpgo`/`samba` siblings to this same file — no second local/Path A
+# edition (D-002 (d)).
+#
+# Rules this file keeps (pinned textually by tests/test_p1.py, "textual
+# pins" — textual presence is not a runtime proof):
+#   - every required key substitutes as ${KEY:?...}: an empty value fails
+#     `up` loudly (the panel lets "" through its completeness check);
+#   - every declared x-g9s-config key has a consumer, and every
+#     substitution stands for a declared key;
+#   - runtime env uses DEVBOX_RUNTIME_* names mapped in `environment:` so
+#     the panel-appended env_file (which carries the DEVBOX_* originals) is
+#     never shadowed by our mapping;
+#   - persistent state is one long-syntax bind with create_host_path:
+#     false — no named volumes (Path A `down -v` must not eat state);
+#   - exactly one published endpoint: host SSH bind/port -> container 22;
+#   - healthcheck, restart: unless-stopped, json-file rotation, explicit
+#     CPU/memory/PIDs limits and stop grace on the service.
+
+name: g9s-devbox
+
+x-g9s-config:
+  envs:
+    # Host directory mounted as /var/lib/devbox. Prepared by
+    # scripts/host-prep.sh; compose must not create it silently.
+    DEVBOX_HOST_PATH: {consumers: [devbox]}
+    # Numeric UID/GID of the unprivileged `dev` user; fixed by the
+    # root-owned identity marker on first boot, mismatch fails the start.
+    DEVBOX_UID: {consumers: [devbox]}
+    DEVBOX_GID: {consumers: [devbox]}
+    # OpenSSH public keys, one per line — the only login trust-channel,
+    # materialized into the central root-owned authorized_keys at start.
+    DEVBOX_AUTHORIZED_KEYS: {consumers: [devbox], visibility: invisible}
+    # Published SSH endpoint: host bind address and host port; the
+    # container port is fixed at 22.
+    DEVBOX_SSH_BIND: {consumers: [devbox]}
+    DEVBOX_SSH_PORT: {consumers: [devbox]}
+    # Per-node upper bounds (not reservations): CPU cores, memory, PIDs.
+    # Recalculate for a new node; values below fit the first P1 node.
+    DEVBOX_CPU_LIMIT: {consumers: [devbox]}
+    DEVBOX_MEMORY_LIMIT: {consumers: [devbox]}
+    DEVBOX_PIDS_LIMIT: {consumers: [devbox]}
+
+services:
+  devbox:
+    # P1 local build. The tag pins what runs locally; a later phase pins a
+    # published registry digest in this same field (image supply D-002 (e)).
+    # tini is PID 1 via the image ENTRYPOINT (no `init:` here — no double
+    # init); the root entrypoint validates state and execs `sshd -D -e`.
+    image: g9s-devbox:p1-local
+    build:
+      context: ..
+      dockerfile: image/Dockerfile
+    # The only published surface: SSH (shell + OpenSSH SFTP on the same
+    # endpoint). No other host ports in P1.
+    ports:
+      - "${DEVBOX_SSH_BIND:?DEVBOX_SSH_BIND is not set}:${DEVBOX_SSH_PORT:?DEVBOX_SSH_PORT is not set}:22"
+    volumes:
+      # The single persistent-state mount: the whole host root with
+      # home/workspaces/system/services inside (D-002 (a)). Long syntax +
+      # create_host_path: false — a missing source is an error, never a
+      # silently created empty directory. No named volumes anywhere.
+      - type: bind
+        source: "${DEVBOX_HOST_PATH:?DEVBOX_HOST_PATH is not set}"
+        target: /var/lib/devbox
+        bind:
+          create_host_path: false
+    environment:
+      # Mapped here under DEVBOX_RUNTIME_* (not the DEVBOX_* originals): the
+      # panel appends env_file for its keys and env_precedence would shadow
+      # a same-name mapping. The entrypoint reads only DEVBOX_RUNTIME_*.
+      DEVBOX_RUNTIME_UID: "${DEVBOX_UID:?DEVBOX_UID is not set}"
+      DEVBOX_RUNTIME_GID: "${DEVBOX_GID:?DEVBOX_GID is not set}"
+      DEVBOX_RUNTIME_AUTHORIZED_KEYS: "${DEVBOX_AUTHORIZED_KEYS:?DEVBOX_AUTHORIZED_KEYS is not set}"
+    healthcheck:
+      # Proves sshd config + listener + required state roots only. It does
+      # NOT prove user login, VS Code Server or any LLM readiness (D-002 (ж)).
+      test: ["CMD", "/usr/local/bin/devbox-healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    # In-flight work does not survive stop; the grace period only lets sshd
+    # exit on SIGTERM. Ordered shutdown of user processes is a named limit
+    # of the tini + sshd model (D-001 (ж)).
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: ${DEVBOX_CPU_LIMIT:?DEVBOX_CPU_LIMIT is not set}
+          memory: ${DEVBOX_MEMORY_LIMIT:?DEVBOX_MEMORY_LIMIT is not set}
+          # PIDs limit lives here (not also as service-level pids_limit:
+          # compose rejects the pair when the values are not identical).
+          pids: ${DEVBOX_PIDS_LIMIT:?DEVBOX_PIDS_LIMIT is not set}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,78 @@
+# g9s-devbox sshd configuration (P1).
+#
+# Contract (D-001, D-002 (g), D-003 (b)):
+#   - key-only login for the unprivileged `dev` user; root, password and
+#     keyboard-interactive auth are denied;
+#   - the central root-owned file is the ONLY AuthorizedKeysFile: absolute
+#     path, no %h/%u patterns, no AuthorizedKeysCommand, no user-home
+#     second trust-channel, so a key surviving in ~/.ssh cannot outlive a
+#     central rotation. The file sits in /etc/ssh/devbox (root:root
+#     0755/0644, container layer) because sshd reads it under the target
+#     user's identity — dev must traverse the parent and read the file,
+#     which the persistent system/ 0700 tree deliberately denies;
+#   - host keys come exclusively from the persistent system/ tree (seeded
+#     once by the entrypoint; never regenerated);
+#   - SFTP is the in-process internal-sftp on the same SSH endpoint (no
+#     second SFTP circuit, no extra ports);
+#   - TCP forwarding stays enabled: VS Code Remote-SSH needs local forward
+#     to the client-installed server (P2); agent forwarding remains a
+#     client-side opt-in (-A), not a second login channel.
+
+# Port/listen: the published endpoint is the host bind/port from compose;
+# inside the container sshd binds all IPv4. (The `Protocol` keyword is gone
+# from modern OpenSSH and would fail `sshd -t`; SSH1 died long ago anyway.)
+Port 22
+ListenAddress 0.0.0.0
+
+HostKey /var/lib/devbox/system/ssh/ssh_host_ed25519_key
+
+# Authentication surface: publickey only, dev only.
+PermitRootLogin no
+PasswordAuthentication no
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+PubkeyAuthentication yes
+AllowUsers dev
+MaxAuthTries 3
+LoginGraceTime 30
+
+# The single login trust-channel: central, root-owned, absolute, on the
+# container layer (materialized from DEVBOX_RUNTIME_AUTHORIZED_KEYS at
+# every start; env is the authority). /etc/ssh/devbox is root:root 0755
+# and the file root:root 0644: public keys are not secrets, and OpenSSH
+# reads this file AS THE TARGET USER (temporarily_use_uid) — a root-only
+# readable location such as system/ 0700 makes sshd silently reject every
+# pubkey login.
+AuthorizedKeysFile /etc/ssh/devbox/authorized_keys
+
+# Ownership/modes of the central file and its parent are checked by the
+# entrypoint on every start; StrictModes keeps sshd refusing loosened
+# files and parents.
+StrictModes yes
+
+# No PAM in this container; the account password field is '*' (set by the
+# entrypoint), which is not a valid password and does not count as locked.
+UsePAM no
+
+# Sessions.
+UseDNS no
+PrintMotd no
+PrintLastLog no
+PermitTunnel no
+GatewayPorts no
+X11Forwarding no
+
+# Forwarding for VS Code Remote-SSH and user tunnels; default agent
+# forwarding remains available to an explicit client opt-in.
+AllowTcpForwarding yes
+AllowAgentForwarding yes
+PermitOpen any
+
+# Same-endpoint file transfer (D-003 (b)).
+Subsystem sftp internal-sftp
+
+# Verbose auth log to stderr (`sshd -e`): refused logins and key outcomes
+# are visible in `docker logs`, not silent.
+LogLevel VERBOSE
+SyslogFacility AUTH

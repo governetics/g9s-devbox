@@ -1,0 +1,19 @@
+# Operator inputs never enter VCS. DEVBOX_AUTHORIZED_KEYS lives here too:
+# public keys are not private credentials, but comments/values must not leak
+# into history either.
+.env
+
+# Other env variants (local overrides, exports) — same rule as .env; the
+# committed template itself stays tracked.
+.env.*
+!.env.example
+
+# Secret material never enters VCS, wherever it lands in the tree.
+secrets/
+
+# Local temp artifacts (Python test runs, editor/OS noise). Product docs,
+# runbooks, tests and evidence stay tracked — nothing below ignores them.
+__pycache__/
+*.py[cod]
+.DS_Store
+*.swp

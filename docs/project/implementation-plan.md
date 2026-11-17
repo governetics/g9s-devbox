@@ -4,7 +4,7 @@
 
 ## Стадия проекта
 
-`exploration` — установлена 2026-11-13. Архитектура ратифицирована, реализация ещё не начата. Стадия не является основанием ослаблять названные свойства или приёмку.
+`exploration` — установлена 2026-11-13. Архитектура ратифицирована; P1 local core реализован и проверен (2026-11-17), P2–P6 не начаты. Стадия не является основанием ослаблять названные свойства или приёмку.
 
 ## Целевой Tech Stack
 
@@ -32,7 +32,7 @@
 | Фаза | Vertical slice | Статус | Дата |
 |---|---|---|---|
 | P0 | Архитектура, ADR и приёмочная матрица | DONE | 2026-11-17 |
-| P1 | Local core: host-prep, SSH/SFTP, persistent identity, fail-loud baseline | TODO | — |
+| P1 | Local core: host-prep, SSH/SFTP, persistent identity, fail-loud baseline | DONE | 2026-11-17 |
 | P2 | Desktop VS Code, pinned extensions/CLI и git | TODO | — |
 | P3 | Local SFTPGo/Samba, selective export и файловая persistence | TODO | — |
 | P4 | Agent lifecycle и реальные LLM после credentials checkpoint | TODO | — |
@@ -63,7 +63,7 @@ Unix ownership/mode/traversal gates засчитываются только на
 - Несуществующий host-path не создаётся daemon'ом; пустой `${KEY:?…}` останавливает `up`.
 - Host-prep идемпотентен; неверные modes/owners и неизвестный непустой state видимы.
 - Первый запуск создаёт identity; recreate с тем же root сохраняет host-key fingerprint и marker.
-- Несколько authorized keys, добавление и отзыв через restart; user-home authorized_keys не создаёт второй канал.
+- Несколько authorized keys; добавление и отзыв через **recreate** (`up -d --force-recreate` — plain `restart` не перечитывает `.env` и сохраняет прежний env), с положительным readback новым ключом и отрицательным — отозванным; user-home authorized_keys не создаёт второй канал.
 - Реальный SSH/SFTP login от `dev`; root/password login отклонены; SFTP put/get/rename.
 - SFTP read `system/` → denied; `docker.sock` и host-home secrets отсутствуют.
 - Runtime client-side scan подтверждает только предусмотренные на фазе поверхности.

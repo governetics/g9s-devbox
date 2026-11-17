@@ -1,6 +1,6 @@
 # g9s-devbox — целевая архитектура MVP
 
-**Статус:** ратифицированная to-be архитектура. Реализация ещё не создана; текущее фактическое состояние — [architecture.md](architecture.md). Детали и отвергнутые альтернативы — [D-001](decisions/D-001-runtime-devbox.md), [D-002](decisions/D-002-sostoyanie-i-postavka.md), [D-003](decisions/D-003-failovyi-obmen.md).
+**Статус:** ратифицированная to-be архитектура. Реализован и проверен P1 local core (2026-11-17); P2–P6 — цель этого документа; текущее фактическое состояние — [architecture.md](architecture.md). Детали и отвергнутые альтернативы — [D-001](decisions/D-001-runtime-devbox.md), [D-002](decisions/D-002-sostoyanie-i-postavka.md), [D-003](decisions/D-003-failovyi-obmen.md).
 
 ## Назначение
 
@@ -50,7 +50,7 @@ Finder/Explorer ─SMB 445─► samba
 |---|---|---|
 | `home/` | Полный `$HOME`: VS Code Server/extensions/settings, Claude/OpenCode config/state/auth | Да, осознанно secrets-bearing |
 | `workspaces/` | Рабочие проекты | Да |
-| `system/` | SSH host keys, central authorized_keys metadata, UID/state-schema marker | Нет |
+| `system/` | SSH host keys, UID/state-schema marker | Нет |
 | `services/` | SFTPGo DB/host keys и Samba passdb/state | Нет |
 
 Samba получает только `home/` и `workspaces/` как `/export/home` и `/export/workspaces`; единая шара публикует `/export`. SFTPGo получает аналогично ограниченные binds. OpenSSH SFTP не ограничен этим export-контуром и действует в рамках Unix permissions `dev`; для `dev` read/write/traverse `system/` запрещены и проверяются отдельной пробой.
@@ -63,7 +63,7 @@ Named volumes для переживаемого состояния не испо
 - UID/GID фиксируются root-owned marker при первичной инициализации; смена требует явной миграции.
 - SFTPGo использует arbitrary numeric user; Samba — numeric uid/gid + force user/group.
 - Host-side/deploy preflight сверяет source и effective Samba identity с marker без монтирования `system/` в Samba.
-- Центральный root-owned authorized_keys — единственный SSH login trust-channel; user-home и host-file не создают независимого доступа. Agent forwarding лишь использует локальный agent внутри уже аутентифицированной SSH-сессии.
+- Центральный root-owned authorized_keys — единственный SSH login trust-channel; user-home и host-file не создают независимого доступа. Список — **runtime-материализация, не persistent state**: authority — env `DEVBOX_AUTHORIZED_KEYS`, каждый старт атомарно пересоздаёт файл в `/etc/ssh/devbox/authorized_keys` (root:root 0755/0644, ephemeral-слой контейнера, читаемый `dev` — OpenSSH читает его под identity целевого пользователя); в persistent-дереве он не хранится. Agent forwarding лишь использует локальный agent внутри уже аутентифицированной SSH-сессии.
 - LLM login выполняется внутри devbox; auth-state сохраняется в home. Git/LLM secrets не записываются в VCS.
 
 ## Сетевые поверхности

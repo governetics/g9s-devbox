@@ -1,10 +1,26 @@
 # g9s-devbox
 
-Контейнерная среда удалённой разработки под управлением governetics: официальный desktop VS Code через Remote-SSH, Claude Code и OpenCode на удалённой стороне, постоянные workspace/state и удобный файловый обмен через OpenSSH SFTP, HTTPS WebDAV и SMB.
+Контейнерная среда удалённой разработки под управлением governetics. Целевой контур: официальный desktop VS Code через Remote-SSH, Claude Code и OpenCode на удалённой стороне, постоянные workspace/state и файловый обмен через OpenSSH SFTP, HTTPS WebDAV и SMB.
 
 ## Статус
 
-Архитектура MVP ратифицирована. Реализация контейнеров, compose и публикация образа ещё не выполнены; репозиторий сейчас содержит project-owned архитектурные документы и план. Документы не являются доказательством runtime-работоспособности.
+**P1 local core реализован и проверен на Linux-узле (2026-11-17).** Работают и доказаны real-env пробами: один контейнер `devbox` (`tini` + sshd), host-prep, persistent state/identity, central-only authorized_keys, seed-only host keys, SSH/SFTP под непривилегированным `dev`. Итог приёмки — V01–V18 «доказано» в [validation report](docs/validation/p1-local-core.md).
+
+**P2–P6 pending, не обещаны:** desktop VS Code/Remote-SSH, CLI-агенты и LLM, SFTPGo/Samba/WebDAV/SMB, governetics Path A (Configure/Deploy/Reapply), публичный образ, removal/redeploy и backup. Их упоминания в этом README и в [vision](docs/architecture/vision.md) — цель, а не текущая функциональность. Репозиторий локальный: remote/push/publish/deploy не выполнялись.
+
+## Быстрый старт (P1, local CLI)
+
+Краткая версия; полная процедура, отказные ветки, ротация ключей и переносимость — в [operator runbook](docs/runbooks/p1-local-core.md).
+
+```
+cp .env.example .env   # заполнить: host path, UID/GID, публичные SSH-ключи, bind/port, limits
+set -a; . ./.env; set +a   # trusted loader: экспортировать СВОЙ только что заполненный .env (подробнее — runbook §2.1)
+sudo bash scripts/host-prep.sh --path "$DEVBOX_HOST_PATH" --uid "$DEVBOX_UID" --gid "$DEVBOX_GID"
+docker compose --env-file .env -f deploy/compose.yml up -d --build
+ssh -p 2222 dev@10.0.0.100    # key-only; SFTP — тем же endpoint
+```
+
+Ротация ключей = правка `.env` + `up -d --force-recreate` (plain `restart` не перечитывает `.env`); доверенная поверхность — только центральный список, home-файл входа не даёт.
 
 ## Целевые возможности
 
@@ -23,6 +39,8 @@
 - [Текущее состояние as-is](docs/architecture/architecture.md)
 - [Целевая архитектура](docs/architecture/vision.md)
 - [План реализации и приёмочная матрица](docs/project/implementation-plan.md)
+- [Runbook оператора P1](docs/runbooks/p1-local-core.md)
+- [Validation report P1](docs/validation/p1-local-core.md)
 - ADR:
   - [D-001 — runtime и жизненный цикл](docs/architecture/decisions/D-001-runtime-devbox.md)
   - [D-002 — persistent state и поставка](docs/architecture/decisions/D-002-sostoyanie-i-postavka.md)
@@ -33,6 +51,4 @@
 
 ## Границы MVP
 
-Не входят Microsoft Tunnel/Azure Relay, code-server, browser IDE, собственный UI, публичные SFTPGo WebClient/WebAdmin, второй SFTP-контур SFTPGo и мультитенантная изоляция. Restart/recreate сохраняет данные, но не обещает продолжение in-flight задач. Persistence не заменяет backup.
-
-Инструкции по установке и запуску появятся вместе с реализацией и будут подтверждены real-env приёмкой; до этого команды запуска здесь не публикуются как работающие.
+Не входят Microsoft Tunnel/Azure Relay, code-server, browser IDE, собственный UI, публичные SFTPGo WebClient/WebAdmin, второй SFTP-контур SFTPGo и мультитенантная изоляция. Restart/recreate сохраняет данные, но не обещает продолжение in-flight задач. Persistence не заменяет backup; защита от произвольного tamper со стороны host-root не заявляется.
